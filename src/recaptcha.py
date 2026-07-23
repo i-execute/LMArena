@@ -101,7 +101,7 @@ def get_recaptcha_settings(config: Optional[dict] = None) -> tuple[str, str]:
     action = str((cfg or {}).get("recaptcha_action") or "").strip()
     if not sitekey:
         sitekey = _m().RECAPTCHA_SITEKEY
-    
+
     if not action:
         # Support both auth_tokens (list) and auth_token (legacy singular)
         auth_tokens = cfg.get("auth_tokens", []) if cfg else []
@@ -111,19 +111,24 @@ def get_recaptcha_settings(config: Optional[dict] = None) -> tuple[str, str]:
             auth_tokens = [singular_token]
         if isinstance(auth_tokens, list):
             auth_tokens = [str(t or "").strip() for t in auth_tokens if str(t or "").strip()]
-        
+
         # Also check legacy auth_token field
         legacy_token = str(cfg.get("auth_token") or "").strip() if cfg else ""
         if legacy_token and legacy_token not in auth_tokens:
             auth_tokens.append(legacy_token)
-        
+
         has_valid_token = any(
-            _m().is_probably_valid_arena_auth_token(t) 
+            _m().is_probably_valid_arena_auth_token(t)
             for t in auth_tokens
         )
-        
-        action = "chat_submit" if has_valid_token else "sign_up"
-    
+
+        # FIX #3: всегда используем chat_submit — это правильный action для
+        # обычных запросов к моделям. sign_up нужен только при первичной
+        # анонимной регистрации, которая выполняется отдельно через
+        # _camoufox_proxy_signup_anonymous_user с явным action="sign_up".
+        # Использование sign_up здесь давало невалидные токены для chat.
+        action = "chat_submit" if has_valid_token else "chat_submit"
+
     return sitekey, action
 
 
@@ -159,10 +164,14 @@ async def _mint_recaptcha_v3_token_in_page(
       const start = Date.now();
 
       const pickG = () => {
+        // FIX #1: убрали проверку typeof ent.ready === 'function' —
+        // grecaptcha.enterprise.ready может отсутствовать (подтверждено логами:
+        // enterprise: object, enterpriseExecute: function, но ready нет).
+        // Достаточно проверить наличие execute.
         const ent = w?.grecaptcha?.enterprise;
-        if (ent && typeof ent.execute === 'function' && typeof ent.ready === 'function') return ent;
+        if (ent && typeof ent.execute === 'function') return ent;
         const g = w?.grecaptcha;
-        if (g && typeof g.execute === 'function' && typeof g.ready === 'function') return g;
+        if (g && typeof g.execute === 'function') return g;
         return null;
       };
 
@@ -190,13 +199,17 @@ async def _mint_recaptcha_v3_token_in_page(
       while ((Date.now() - start) < limit) {
         const g = pickG();
         if (g) {
-          try {
-            // g.ready can hang; guard with a short timeout.
-            await Promise.race([
-              new Promise((resolve) => { try { g.ready(resolve); } catch (e) { console.error('LM Bridge: reCAPTCHA v3 ready callback failed', e); resolve(true); } }),
-              sleep(5000),
-            ]);
-          } catch (e) { console.error('LM Bridge: reCAPTCHA v3 ready wait failed', e); }
+          // FIX #2: вызываем g.ready() только если метод существует.
+          // Безусловный вызов падал когда enterprise не экспортирует ready.
+          if (typeof g.ready === 'function') {
+            try {
+              // g.ready can hang; guard with a short timeout.
+              await Promise.race([
+                new Promise((resolve) => { try { g.ready(resolve); } catch (e) { console.error('LM Bridge: reCAPTCHA v3 ready callback failed', e); resolve(true); } }),
+                sleep(5000),
+              ]);
+            } catch (e) { console.error('LM Bridge: reCAPTCHA v3 ready wait failed', e); }
+          }
           try {
             // Firefox Xray wrappers: build params in the page compartment.
             const params = new w.Object();
@@ -365,7 +378,7 @@ async def _maybe_inject_arena_auth_cookie_from_localstorage(page, context) -> Op
                 return {};
               }
             }"""
-    )
+        )
     except Exception:
         return None
 
@@ -564,7 +577,7 @@ async def get_recaptcha_v3_token_with_chrome(config: dict) -> Optional[str]:
                 await asyncio.sleep(1)
                 await page.mouse.move(200, 300)
                 await page.mouse.wheel(0, 300)
-                await asyncio.sleep(3) # Increased "Human" pause
+                await asyncio.sleep(3)  # Increased "Human" pause
             except Exception:
                 pass
 
@@ -580,6 +593,8 @@ async def get_recaptcha_v3_token_with_chrome(config: dict) -> Optional[str]:
             except Exception:
                 pass
 
+            # FIX #1 (Chrome путь): ждём только execute, без ready —
+            # совпадает с исправлением в pickG() для Camoufox.
             await page.wait_for_function(
                 "window.grecaptcha && ("
                 "(window.grecaptcha.enterprise && typeof window.grecaptcha.enterprise.execute === 'function') || "
@@ -594,9 +609,17 @@ async def get_recaptcha_v3_token_with_chrome(config: dict) -> Optional[str]:
                     ? window.grecaptcha.enterprise
                     : window.grecaptcha;
                   if (!g || typeof g.execute !== 'function') return reject('NO_GRECAPTCHA');
-                  try {
-                    g.execute(sitekey, { action }).then(resolve).catch((err) => reject(String(err)));
-                  } catch (e) { reject(String(e)); }
+                  // FIX #2 (Chrome путь): вызываем ready только если он есть.
+                  const doExecute = () => {
+                    try {
+                      g.execute(sitekey, { action }).then(resolve).catch((err) => reject(String(err)));
+                    } catch (e) { reject(String(e)); }
+                  };
+                  if (typeof g.ready === 'function') {
+                    try { g.ready(doExecute); } catch(e) { doExecute(); }
+                  } else {
+                    doExecute();
+                  }
                 })""",
                 {"sitekey": recaptcha_sitekey, "action": recaptcha_action},
             )
@@ -613,16 +636,16 @@ async def get_recaptcha_v3_token_with_chrome(config: dict) -> Optional[str]:
 async def get_recaptcha_v3_token() -> Optional[str]:
     """
     Retrieves reCAPTCHA v3 token using a 'Side-Channel' approach.
-    We write the token to a global window variable and poll for it, 
+    We write the token to a global window variable and poll for it,
     bypassing Promise serialization issues in the Main World bridge.
     """
     _m().debug_print("🔐 Starting reCAPTCHA v3 token retrieval (Side-Channel Mode)...")
-    
+
     config = _m().get_config()
     cf_clearance = config.get("cf_clearance", "")
     recaptcha_sitekey, recaptcha_action = get_recaptcha_settings(config)
     _m().debug_print(f"  🔑 Using sitekey: {recaptcha_sitekey[:20]}..., action: {recaptcha_action}")
-    
+
     try:
         chrome_token = await _m().get_recaptcha_v3_token_with_chrome(config)
         if chrome_token:
@@ -643,63 +666,64 @@ async def get_recaptcha_v3_token() -> Optional[str]:
                 }])
 
             page = await context.new_page()
-            
+
             _m().debug_print("  🌐 Navigating to arena.ai...")
             await page.goto("https://arena.ai/", wait_until="domcontentloaded")
 
-            # --- NEW: Cloudflare/Turnstile Pass-Through ---
+            # --- Cloudflare/Turnstile Pass-Through ---
             _m().debug_print("  🛡️  Checking for Cloudflare Turnstile...")
-            
-            # Allow time for the widget to render if it's going to
+
             try:
-                # Check for challenge title or widget presence
-                # click_turnstile() includes a 2-second wait after successful click
-                max_attempts = _m().constants.TURNSTILE_MAX_ATTEMPTS  # 15 attempts with 2s click_turnstile wait = 30s max
+                max_attempts = _m().constants.TURNSTILE_MAX_ATTEMPTS
                 for attempt in range(max_attempts):
                     title = await page.title()
                     if _m().CLOUDFLARE_CHALLENGE_TITLE not in title:
-                        # Title changed - Turnstile likely completed
                         _m().debug_print(f"  ✅ Turnstile challenge resolved (title: {title[:30]}...)")
                         break
                     _m().debug_print(f"  🔒 Cloudflare challenge active (attempt {attempt + 1}/{max_attempts})...")
                     clicked = await _m().click_turnstile(page)
                     if clicked:
                         _m().debug_print("  🖱️  Clicked Turnstile.")
-                    # Note: click_turnstile() already includes 2-second wait after successful click
-                
-                # Wait for the page to actually settle into the main app
+
                 await page.wait_for_load_state("domcontentloaded")
             except Exception as e:
                 _m().debug_print(f"  ⚠️ Error handling Turnstile: {e}")
-            # ----------------------------------------------
 
-            # 1. Wake up the page (Humanize)
+            # Wake up the page (humanize)
             _m().debug_print("  🖱️  Waking up page...")
             await page.mouse.move(100, 100)
             await page.mouse.wheel(0, 200)
-            await asyncio.sleep(2) # Vital "Human" pause
+            await asyncio.sleep(2)
 
-            # 2. Check for Library
-            _m().debug_print("  ⏳ Checking for library...")
-            # Use wrappedJSObject to check for grecaptcha in the main world
-            lib_ready = await _m().safe_page_evaluate(
-                page,
-                "() => { const w = window.wrappedJSObject || window; return !!(w.grecaptcha && w.grecaptcha.enterprise); }",
-            )
-            _m().debug_print(f"  📦 Library ready: {lib_ready}")
-            if not lib_ready:
-                _m().debug_print("  ⚠️ Library not found. Checking basic grecaptcha...")
+            # Check for library — ждём до 30 секунд появления enterprise.execute
+            # (диагностика показала: токен появляется на ~18й секунде)
+            _m().debug_print("  ⏳ Waiting for grecaptcha.enterprise.execute (up to 30s)...")
+            lib_ready = False
+            for _wait_attempt in range(30):
                 lib_ready = await _m().safe_page_evaluate(
                     page,
-                    "() => { const w = window.wrappedJSObject || window; return !!(w.grecaptcha); }",
+                    # FIX #1: проверяем только execute, без ready
+                    "() => { const w = window.wrappedJSObject || window; return !!(w.grecaptcha && w.grecaptcha.enterprise && typeof w.grecaptcha.enterprise.execute === 'function'); }",
                 )
-                _m().debug_print(f"  📦 Basic grecaptcha ready: {lib_ready}")
+                if lib_ready:
+                    _m().debug_print(f"  📦 grecaptcha.enterprise.execute ready (after ~{_wait_attempt}s)")
+                    break
+                await asyncio.sleep(1)
+
+            if not lib_ready:
+                # Fallback: попробуем базовый grecaptcha без enterprise
+                _m().debug_print("  ⚠️ enterprise not found, checking basic grecaptcha...")
+                lib_ready = await _m().safe_page_evaluate(
+                    page,
+                    "() => { const w = window.wrappedJSObject || window; return !!(w.grecaptcha && typeof w.grecaptcha.execute === 'function'); }",
+                )
+                _m().debug_print(f"  📦 Basic grecaptcha.execute ready: {lib_ready}")
+
             if not lib_ready:
                 _m().debug_print("  ⚠️ Library not found. Injecting reCAPTCHA scripts...")
-                # Inject reCAPTCHA scripts since LMArena may not have them loaded
                 await _m().safe_page_evaluate(
                     page,
-                    """() => {
+                    """(recaptcha_sitekey) => {
                         const w = window.wrappedJSObject || window;
                         if (w.__LM_BRIDGE_RECAPTCHA_INJECTED) return true;
                         w.__LM_BRIDGE_RECAPTCHA_INJECTED = true;
@@ -718,24 +742,22 @@ async def get_recaptcha_v3_token() -> Optional[str]:
                         }
                         return true;
                     }""",
-                    recaptcha_sitekey=recaptcha_sitekey,
+                    recaptcha_sitekey,
                 )
-                # Wait for scripts to load
                 await asyncio.sleep(5)
                 lib_ready = await _m().safe_page_evaluate(
                     page,
-                    "() => { const w = window.wrappedJSObject || window; return !!(w.grecaptcha && w.grecaptcha.enterprise); }",
+                    # FIX #1: и здесь тоже без ready
+                    "() => { const w = window.wrappedJSObject || window; return !!(w.grecaptcha && w.grecaptcha.enterprise && typeof w.grecaptcha.enterprise.execute === 'function'); }",
                 )
                 if not lib_ready:
                     _m().debug_print("❌ reCAPTCHA library still not loaded after injection.")
                     return None
 
-            # 3. Execute reCAPTCHA using await (more reliable than Promise callbacks)
             _m().debug_print(f"  🔑 Using sitekey: {recaptcha_sitekey[:20]}..., action: {recaptcha_action}")
             _m().debug_print("  🚀 Triggering reCAPTCHA execution...")
-            
-            # Wait for page to stabilize before executing reCAPTCHA
-            # SPA navigation can destroy the execution context mid-evaluation
+
+            # Стабилизация перед execute — SPA может убить контекст при навигации
             try:
                 await page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
@@ -744,40 +766,47 @@ async def get_recaptcha_v3_token() -> Optional[str]:
                 except Exception:
                     pass
             await asyncio.sleep(1)
-            
+
+            # FIX #2: вызываем g.ready() только если метод существует
             mint_js = f"""async () => {{
                 const w = window.wrappedJSObject || window;
                 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-                
+
                 const pickG = () => {{
+                    // FIX #1: только проверка execute, без ready
                     const ent = w?.grecaptcha?.enterprise;
                     if (ent && typeof ent.execute === 'function') return ent;
                     const g = w?.grecaptcha;
                     if (g && typeof g.execute === 'function') return g;
                     return null;
                 }};
-                
+
                 const g = pickG();
                 if (!g || typeof g.execute !== 'function') {{
                     throw new Error('No valid grecaptcha found');
                 }}
-                
-                // Wait for ready (with timeout)
-                try {{
-                    await Promise.race([
-                        new Promise((resolve) => {{ try {{ g.ready(resolve); }} catch(e) {{ resolve(true); }} }}),
-                        sleep(5000),
-                    ]);
-                }} catch(e) {{}}
-                
+
+                // FIX #2: ready вызываем только если метод есть
+                if (typeof g.ready === 'function') {{
+                    try {{
+                        await Promise.race([
+                            new Promise((resolve) => {{
+                                try {{ g.ready(resolve); }}
+                                catch(e) {{ resolve(true); }}
+                            }}),
+                            sleep(5000),
+                        ]);
+                    }} catch(e) {{}}
+                }}
+
                 // Firefox Xray wrappers: build params in the page compartment
                 const params = new w.Object();
                 params.action = '{recaptcha_action}';
-                
+
                 const token = await g.execute('{recaptcha_sitekey}', params);
                 return String(token || '');
             }}"""
-            
+
             try:
                 token = await asyncio.wait_for(
                     page.evaluate(mint_js),
@@ -789,7 +818,7 @@ async def get_recaptcha_v3_token() -> Optional[str]:
             except Exception as e:
                 _m().debug_print(f"❌ reCAPTCHA execute failed: {e}")
                 return None
-            
+
             if token:
                 _m().debug_print(f"✅ Token captured! ({len(token)} chars)")
                 _m().RECAPTCHA_TOKEN = token
@@ -806,7 +835,7 @@ async def get_recaptcha_v3_token() -> Optional[str]:
 
 async def refresh_recaptcha_token(force_new: bool = False):
     """Checks if the global reCAPTCHA token is expired and refreshes it if necessary."""
-    
+
     current_time = datetime.now(timezone.utc)
     if force_new:
         _m().RECAPTCHA_TOKEN = None
@@ -830,7 +859,7 @@ async def refresh_recaptcha_token(force_new: bool = False):
             # Set a short retry delay if refresh fails
             _m().RECAPTCHA_EXPIRY = current_time + timedelta(seconds=10)
             return None
-    
+
     return _m().RECAPTCHA_TOKEN
 
 
