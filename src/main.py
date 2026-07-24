@@ -2500,13 +2500,19 @@ async def api_chat_completions(request: Request, api_key: dict = Depends(rate_li
             debug_print(f"🤖 Generated model_msg_id: {model_msg_id}")
             debug_print(f"🤖 Generated model_b_msg_id: {model_b_msg_id}")
              
+            # arena.ai changed its API: the old "direct" mode is no longer accepted for new
+            # conversations ("400 'direct' mode is not allowed when starting a new conversation").
+            # Current valid modes (matching upstream g4f):
+            #   - "direct-battle": single model (only modelAId)  <- bridge uses this
+            #   - "side-by-side": two models (modelAId + modelBId)
+            #   - "battle": neither specified
+            # For direct-battle (single model) upstream omits modelBMessageId; we follow suit.
             payload = {
                 "id": session_id,
-                "mode": "direct",
+                "mode": "direct-battle",
                 "modelAId": model_id,
                 "userMessageId": user_msg_id,
                 "modelAMessageId": model_msg_id,
-                "modelBMessageId": model_b_msg_id,
                 "userMessage": {
                     "content": prompt,
                     "experimental_attachments": experimental_attachments,
@@ -4156,7 +4162,11 @@ async def api_chat_completions(request: Request, api_key: dict = Depends(rate_li
                                         payload["id"] = session_id
                                         payload["userMessageId"] = user_msg_id
                                         payload["modelAMessageId"] = model_msg_id
-                                        payload["modelBMessageId"] = model_b_msg_id
+                                        # Keep direct-battle mode consistent on retry: a single-model
+                                        # conversation must NOT carry modelBMessageId (arena.ai rejects the
+                                        # old "direct"/side-by-side shape with 400 for new conversations).
+                                        payload["mode"] = "direct-battle"
+                                        payload.pop("modelBMessageId", None)
                                         debug_print("🔁 Retrying create-evaluation with fresh session/message IDs.")
                                     async for ka in wait_with_keepalive(1.5):
                                         yield ka
