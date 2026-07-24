@@ -2662,6 +2662,23 @@ async def api_chat_completions(request: Request, api_key: dict = Depends(rate_li
                         debug_print(f"🔒 Attempt {attempt + 1}/{max_retries} - Auth failed with token {current_token[:20]}...")
                         failed_tokens.add(current_token)
                         debug_print(f"📝 Failed tokens so far: {len(failed_tokens)}")
+                        # Log the upstream 401 body so we can see WHY arena.ai rejected the token.
+                        # arena.ai often returns a JSON reason (expired JWT / invalid session / missing cookie),
+                        # which is otherwise invisible and makes a fresh-looking token fail opaquely.
+                        try:
+                            _body_401 = str(response.text or "")[:1000]
+                            debug_print(f"📥 401 response body: {_body_401}")
+                            try:
+                                _h_401 = {
+                                    str(k): v for k, v in response.headers.items()
+                                    if str(k).lower() in ("www-authenticate", "x-powered-by", "server", "date", "content-type")
+                                }
+                                if _h_401:
+                                    debug_print(f"📥 401 response headers (filtered): {_h_401}")
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
 
                         if attempt < max_retries - 1:
                             try:
@@ -3652,6 +3669,14 @@ async def api_chat_completions(request: Request, api_key: dict = Depends(rate_li
                                     debug_print(f"🔒 Stream token expired")
                                     # Add current token to failed set
                                     failed_tokens.add(current_token)
+                                    # Log the upstream 401 body so we can see WHY arena.ai rejected the token.
+                                    # Read the body without consuming the stream permanently (best-effort, capped).
+                                    try:
+                                        _peek = await response.aread()
+                                        _peek_text = _peek.decode("utf-8", errors="replace") if isinstance(_peek, (bytes, bytearray)) else str(_peek)
+                                        debug_print(f"📥 stream 401 response body: {_peek_text[:1000]}")
+                                    except Exception:
+                                        pass
 
                                     # Best-effort: refresh the current base64 session in-memory before rotating.
                                     refreshed_token: Optional[str] = None
