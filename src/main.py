@@ -2623,6 +2623,16 @@ async def api_chat_completions(request: Request, api_key: dict = Depends(rate_li
 
                     log_http_status(response.status_code, "LMArena API")
 
+                    # Log the upstream body for ANY non-2xx response we don't otherwise handle here.
+                    # This is critical for 400/5xx where arena.ai returns a JSON reason in the body
+                    # (e.g. which payload field is invalid), which raise_for_status() below discards.
+                    if not (200 <= response.status_code < 300):
+                        try:
+                            _err_body = str(response.text or "")[:1000]
+                            debug_print(f"📥 {response.status_code} response body: {_err_body}")
+                        except Exception:
+                            pass
+
                     if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
                         debug_print(f"⏱️  Attempt {attempt + 1}/{max_retries} - Rate limit with token {current_token[:20]}...")
                         retry_after = response.headers.get("Retry-After")
