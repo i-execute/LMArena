@@ -4433,10 +4433,29 @@ async def api_chat_completions(request: Request, api_key: dict = Depends(rate_li
                 )
                 
             log_http_status(response.status_code, "LMArena API Response")
-            
-            # Use aread() to ensure we buffer streaming-capable responses (like BrowserFetchStreamResponse)
-            response_bytes = await response.aread()
-            response_text_body = response_bytes.decode("utf-8", errors="replace")
+
+            # Buffer the response body as bytes. The response object can be one of:
+            #   - an httpx.AsyncClient response or BrowserFetchStreamResponse -> async, has `.aread()`
+            #   - a `requests`/cloudscraper Response (from make_request_with_retry) -> sync, has `.content`
+            # Calling `.aread()` on the latter crashes with AttributeError; handle both.
+            if hasattr(response, "aread"):
+                response_bytes = await response.aread()
+            elif hasattr(response, "content"):
+                # requests.Response.content is already buffered bytes.
+                response_bytes = response.content or b""
+                # For streaming requests.Response, ensure the body is fully read.
+                if hasattr(response, "raw") and response.raw is not None:
+                    try:
+                        response.raw.drain()
+                    except Exception:
+                        pass
+            else:
+                # Fallback: try .read() (sync) or stringify.
+                try:
+                    response_bytes = response.read() or b""
+                except Exception:
+                    response_bytes = str(getattr(response, "text", "")).encode("utf-8")
+            response_text_body = response_bytes.decode("utf-8", errors="replace") if isinstance(response_bytes, (bytes, bytearray)) else str(response_bytes)
             
             debug_print(f"📏 Response length: {len(response_text_body)} characters")
             debug_print(f"📋 Response headers: {dict(response.headers)}")
