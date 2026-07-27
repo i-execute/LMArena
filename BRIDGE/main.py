@@ -5014,9 +5014,9 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    print("=" * 60)
+    print("=" * 30)
     print("🚀 LMArena Bridge Server Starting...")
-    print("=" * 60)
+    print("=" * 30)
     print(f"📍 Dashboard: http://localhost:{PORT}/dashboard")
     print(f"🔐 Login: http://localhost:{PORT}/login")
     print(f"📚 API Base URL: http://localhost:{PORT}/api/v1")
