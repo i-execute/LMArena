@@ -1,7 +1,4 @@
-"""
-Constants for LMArenaBridge.
-All hardcoded values should be defined here.
-"""
+"""Constants for LMArena"""
 
 # APPLICATION CONFIGURATION
 
@@ -9,15 +6,13 @@ All hardcoded values should be defined here.
 DEBUG = True
 
 # Port to run the server on
-PORT = 8000
+PORT = 6767
 
 # Default config and models file paths
 CONFIG_FILE = "config.json"
 MODELS_FILE = "models.json"
 
-# ============================================================
 # HTTP STATUS CODES
-# ============================================================
 
 class HTTPStatus:
     """HTTP Status Codes"""
@@ -152,9 +147,7 @@ STATUS_MESSAGES = {
     511: "Network Authentication Required"
 }
 
-# ============================================================
 # RECAPTCHA CONSTANTS
-# ============================================================
 
 # Default reCAPTCHA sitekey and action from gpt4free/g4f/Provider/needs_auth/LMArena.py
 RECAPTCHA_SITEKEY = "6Led_uYrAAAAAIP_9E8Ais_67Z6Vp4vdf40p8SQU"
@@ -166,9 +159,7 @@ RECAPTCHA_V2_SITEKEY = "6Ld7ePYrAAAAAB34ovoFoDau1fqCJ6IyOjFEQaMn"
 # Cloudflare Turnstile sitekey used by LMArena to mint anonymous-user signup tokens
 TURNSTILE_SITEKEY = "0x4AAAAAAA65vWDmG-O_lPtT"
 
-# ============================================================
 # ARENA ORIGINS
-# ============================================================
 
 LMARENA_ORIGIN = "https://lmarena.ai"
 ARENA_ORIGIN = "https://arena.ai"
@@ -180,9 +171,7 @@ ARENA_HOST_TO_ORIGIN = {
     "www.arena.ai": ARENA_ORIGIN,
 }
 
-# ============================================================
 # BROWSER FETCH MODELS
-# ============================================================
 
 # Models that should always use an in-browser fetch transport for streaming
 STRICT_BROWSER_FETCH_MODELS = {
@@ -190,9 +179,7 @@ STRICT_BROWSER_FETCH_MODELS = {
     "gemini-exp-1206",
 }
 
-# ============================================================
 # TIMEOUTS AND LIMITS
-# ============================================================
 
 # Default timeout for requests (seconds)
 DEFAULT_REQUEST_TIMEOUT = 120
@@ -210,24 +197,20 @@ RECAPTCHA_TOKEN_EXPIRY_SECONDS = 115
 RECAPTCHA_V3_TOKEN_LIFETIME_SECONDS = 115
 
 # Background refresh interval (seconds)
-PERIODIC_REFRESH_INTERVAL_SECONDS = 1800  # 30 minutes
+PERIODIC_REFRESH_INTERVAL_SECONDS = 1800
 
 # Rate limiting
 RATE_LIMIT_WINDOW_SECONDS = 60
 DEFAULT_RATE_LIMIT_RPM = 60
 
-# ============================================================
 # USERSCRIPT PROXY SETTINGS
-# ============================================================
 
 DEFAULT_USERSCRIPT_PROXY_POLL_TIMEOUT_SECONDS = 25
 DEFAULT_USERSCRIPT_PROXY_JOB_TTL_SECONDS = 90
 USERSCRIPT_PROXY_ACTIVE_WINDOW_BUFFER_SECONDS = 10
 USERSCRIPT_PROXY_JOB_TTL_MAX_SECONDS = 600
 
-# ============================================================
 # BACKOFF SETTINGS
-# ============================================================
 
 # Exponential backoff for rate limit responses (429)
 def get_rate_limit_backoff_seconds(retry_after: str | None, attempt: int) -> int:
@@ -249,9 +232,7 @@ def get_general_backoff_seconds(attempt: int) -> int:
     attempt = max(0, int(attempt))
     return min(2 * (2 ** attempt), 30)
 
-# ============================================================
 # BROWSER SETTINGS
-# ============================================================
 
 # Default browser window modes
 DEFAULT_CAMOUFOX_PROXY_WINDOW_MODE = "hide"
@@ -277,11 +258,9 @@ DEFAULT_USER_AGENT = (
     "Chrome/120.0.0.0 Safari/537.36"
 )
 
-# ============================================================
 # IMAGE UPLOAD SETTINGS
-# ============================================================
 
-MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
 
 # Supported MIME types for image upload
 SUPPORTED_IMAGE_MIME_TYPES = {
@@ -292,9 +271,7 @@ SUPPORTED_IMAGE_MIME_TYPES = {
     "image/svg+xml",
 }
 
-# ============================================================
 # CLOUDFLARE COOKIE NAMES
-# ============================================================
 
 CF_CLEARANCE_COOKIE = "cf_clearance"
 CF_BM_COOKIE = "__cf_bm"
@@ -306,23 +283,17 @@ GRECAPTCHA_COOKIE = "_GRECAPTCHA"
 # Cookie domains
 ARENA_COOKIE_DOMAINS = (".lmarena.ai", ".arena.ai")
 
-# ============================================================
 # API ENDPOINTS
-# ============================================================
 
 ARENA_DIRECT_MODE_URL = "https://arena.ai/?mode=direct"
 NEXTJS_API_SIGNUP = "/nextjs-api/sign-up"
 
-# ============================================================
 # CONTENT TYPES
-# ============================================================
 
 CONTENT_TYPE_TEXT_PLAIN_UTF8 = "text/plain;charset=UTF-8"
 CONTENT_TYPE_APPLICATION_JSON = "application/json"
 
-# ============================================================
 # TURNSTILE SELECTORS
-# ============================================================
 
 TURNSTILE_SELECTORS = [
     '#lm-bridge-turnstile',
@@ -338,22 +309,16 @@ TURNSTILE_INNER_SELECTORS = [
     "label",
 ]
 
-# ============================================================
 # HTTP HEADERS
-# ============================================================
 
 ARENA_ORIGIN_HEADER = "https://arena.ai"
 ARENA_REFERER_HEADER = "https://arena.ai/?mode=direct"
 
-# ============================================================
 # SUPABASE
-# ============================================================
 
 # Regex pattern for finding Supabase JWT
 SUPABASE_JWT_PATTERN = r"eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+"
 
-# ============================================================
 # TURNSTILE / CLOUDFLARE
-# ============================================================
 
 CLOUDFLARE_CHALLENGE_TITLE = "Just a moment"
