@@ -3,9 +3,7 @@ Constants for LMArenaBridge.
 All hardcoded values should be defined here.
 """
 
-# ============================================================
 # APPLICATION CONFIGURATION
-# ============================================================
 
 # Set to True for detailed logging, False for minimal logging
 DEBUG = True
