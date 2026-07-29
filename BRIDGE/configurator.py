@@ -1,7 +1,4 @@
-"""
-Configuration management for LMArenaBridge.
-Handles loading, saving, and managing configuration.
-"""
+"""Configuration management for LMArena"""
 
 import json
 import os
