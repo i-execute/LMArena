@@ -112,7 +112,7 @@ from .vision_solver import (
 
 # Aliases for backward compatibility
 DEBUG = constants.DEBUG
-PORT = constants.PORT
+PORT = None  # resolved at startup via configurator.resolve_port()
 HTTPStatus = constants.HTTPStatus
 STATUS_MESSAGES = constants.STATUS_MESSAGES
 RECAPTCHA_SITEKEY = constants.RECAPTCHA_SITEKEY
@@ -5014,6 +5014,13 @@ if __name__ == "__main__":
     except Exception:
         pass
 
+    # Resolve a free port: prefer 6767, fall back to next available
+    from BRIDGE.configurator import resolve_port
+    resolved = resolve_port(constants.PORT)
+    global PORT
+    PORT = resolved
+    if resolved != constants.PORT:
+        print(f"⚠️  Port {constants.PORT} is busy, using {resolved} instead")
     print("=" * 30)
     print("🚀 LMArena Bridge Server Starting...")
     print("=" * 30)

@@ -135,6 +135,51 @@ def get_global_state(key: str, default: Any = None) -> Any:
     return _global_state.get(key, default)
 
 
+# === Port resolution ===
+
+import socket
+
+
+def is_port_free(port: int, host: str = "0.0.0.0") -> bool:
+    """Check if a TCP port is free to bind."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+        return True
+    except (OSError, socket.error):
+        return False
+
+
+def resolve_port(preferred: int = None) -> int:
+    """Resolve a free port for the server.
+
+    Tries the preferred port (default: constants.PORT = 6767).
+    If it's already in use, scans upward from 6767 until a free port is found.
+    Returns the port number to use.
+    """
+    if preferred is None:
+        preferred = constants.PORT
+
+    if is_port_free(preferred):
+        return preferred
+
+    # Preferred port is busy — scan from 6767 upward
+    base = constants.PORT
+    for offset in range(1, 1000):
+        candidate = base + offset
+        if is_port_free(candidate):
+            return candidate
+
+    # Last resort: let the OS pick
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("0.0.0.0", 0))
+            return s.getsockname()[1]
+    except Exception:
+        return preferred
+
+
 # === Model management ===
 
 def get_models() -> list:
