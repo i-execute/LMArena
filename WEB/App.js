@@ -718,7 +718,7 @@ function GlobalStyle() {
     *, *::before, *::after { box-sizing: border-box; }
     html, body, #root { margin: 0; width: 100%; min-height: 100%; }
     /* preserve the top spacer set in index.html so content starts below it */
-    body { padding-top: var(--top-spacer-height); background: #05070a; color: #d7e2ea; font-family: 'Inter', sans-serif; }
+    body { background: #05070a; color: #d7e2ea; font-family: 'Inter', sans-serif; }
     button, input, textarea { font-family: inherit; }
 
     .gate { min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center;
