@@ -242,17 +242,18 @@ async function playLottie(container, jsonUrl) {
 }
 // raw file link, not a github.com/.../blob/... page — blob would return HTML, not JSON
 const GATE_STICKER_URL = "https://raw.githubusercontent.com/i-execute/Media/main/Animation/Evil_Rat.json";
-function GateSticker() {
+function GateSticker({ url } = {}) {
   const ref = useRef(null);
   useEffect(() => {
     let anim, cancelled = false;
+    const src = url || GATE_STICKER_URL;
     if (ref.current) {
-      playLottie(ref.current, GATE_STICKER_URL).then((a) => {
+      playLottie(ref.current, src).then((a) => {
         if (cancelled && a) a.destroy(); else anim = a;
       });
     }
     return () => { cancelled = true; if (anim) anim.destroy(); };
-  }, []);
+  }, [url]);
   return React.createElement("div", { className: "gate-sticker", ref });
 }
 
@@ -290,6 +291,11 @@ function AccessGate({ phase, reason, onRetry }) {
       "div", { className: "gate-card" },
       React.createElement("div", { className: "gate-brand" }, React.createElement(Icon, { path: ICONS.shieldCheck, size: 16 }), React.createElement("span", null, "SECURE ACCESS")),
       React.createElement(GateSticker, null),
+      React.createElement("div", { style: { display: 'flex', gap: 8, marginTop: 8 } },
+        React.createElement(GateSticker, null),
+        React.createElement(GateSticker, null),
+        React.createElement(GateSticker, null)
+      ),
       phase === "boot" && React.createElement(
         "div", { className: "gate-log" },
         bootLines.map((l, i) => React.createElement("div", { className: "log-line", key: i }, l)),
