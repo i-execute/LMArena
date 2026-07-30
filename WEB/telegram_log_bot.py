@@ -5,8 +5,10 @@ Usage: TELEGRAM_BOT_TOKEN=... OWNER_ID=... python3 telegram_log_bot.py
 import os
 import sys
 import time
-import asyncio
 from pathlib import Path
+import urllib.request
+import urllib.parse
+import json
 
 OBHOD_DIR = Path(__file__).resolve().parents[1] / 'OBHOD' / 'BOT'
 LOG_FILES = [
@@ -25,31 +27,21 @@ if not TOKEN or not OWNER:
 
 OWNER = int(OWNER)
 
-# Use OBHOD BotAPI if available, else fallback to simple HTTP sender
-try:
-    from OBHOD.BOT.core import BotAPI
-    use_botapi = True
-except Exception:
-    use_botapi = False
+TELEGRAM_URL = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
 
-import aiohttp
 
-async def send_message_simple(token, chat_id, text):
-    url = f'https://api.telegram.org/bot{token}/sendMessage'
-    async with aiohttp.ClientSession() as s:
-        await s.post(url, json={'chat_id': chat_id, 'text': text})
+def send_message(chat_id, text):
+    data = {'chat_id': str(chat_id), 'text': text}
+    data_b = json.dumps(data).encode('utf-8')
+    req = urllib.request.Request(TELEGRAM_URL, data=data_b, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            r.read()
+    except Exception as e:
+        print('send_message failed:', e)
 
-async def forwarder():
-    if use_botapi:
-        api = BotAPI(TOKEN)
-        await api.start()
-        send = api.send_message
-    else:
-        async def send(chat_id, text, **kw):
-            await send_message_simple(TOKEN, chat_id, text)
-        send = send
 
-    # Track file positions
+def main():
     positions = {}
     for f in LOG_FILES:
         try:
@@ -57,50 +49,49 @@ async def forwarder():
         except Exception:
             positions[f] = 0
 
-    # Send startup message
+    # Startup message
     try:
-        await (send(OWNER, f"Log forwarder started. Watching: {', '.join(LOG_FILES)}"))
+        send_message(OWNER, f"Log forwarder started. Watching: {', '.join(LOG_FILES)}")
     except Exception:
         pass
 
-    while True:
-        messages = []
-        for f in LOG_FILES:
-            try:
-                cur = os.path.getsize(f)
-                last = positions.get(f, 0)
-                if cur > last:
-                    with open(f, 'r', errors='ignore') as fh:
-                        fh.seek(last)
-                        add = fh.read()
-                        if add:
-                            messages.append((f, add.strip()))
-                    positions[f] = cur
-            except FileNotFoundError:
-                continue
-            except Exception:
-                continue
-
-        # Send aggregated messages, but limit size to 3000 chars per message
-        for fname, text in messages:
-            if not text:
-                continue
-            header = f"Logs update: {os.path.basename(fname)}\n"
-            payload = header + text
-            # split into chunks
-            while payload:
-                chunk = payload[:3000]
-                payload = payload[3000:]
-                try:
-                    await (send(OWNER, f"{chunk}"))
-                except Exception as e:
-                    # swallow errors but log
-                    print('Failed to send log chunk:', e)
-                    break
-        await asyncio.sleep(5)
-
-if __name__ == '__main__':
     try:
-        asyncio.run(forwarder())
+        while True:
+            messages = []
+            for f in LOG_FILES:
+                try:
+                    cur = os.path.getsize(f)
+                    last = positions.get(f, 0)
+                    if cur > last:
+                        with open(f, 'r', errors='ignore') as fh:
+                            fh.seek(last)
+                            add = fh.read()
+                            if add:
+                                messages.append((f, add.strip()))
+                        positions[f] = cur
+                except FileNotFoundError:
+                    continue
+                except Exception:
+                    continue
+
+            for fname, text in messages:
+                if not text:
+                    continue
+                header = f"Logs update: {os.path.basename(fname)}\n"
+                payload = header + text
+                while payload:
+                    chunk = payload[:3000]
+                    payload = payload[3000:]
+                    try:
+                        send_message(OWNER, chunk)
+                    except Exception as e:
+                        print('Failed to send chunk:', e)
+                        break
+
+            time.sleep(5)
     except KeyboardInterrupt:
         pass
+
+
+if __name__ == '__main__':
+    main()

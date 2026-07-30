@@ -5,12 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LMArena Bridge UI</title>
   <style>
-    /* Respect phone notch / safe-area without an overlay spacer */
-    body { padding-top: calc(env(safe-area-inset-top, 20px) + 8px); margin:0; }
-    #root { min-height: 100vh; box-sizing: border-box; }
+    /* Provide a visible top spacer (dark grey) and push content down to avoid Telegram Mini App close button */
+    :root { --top-spacer-height: calc(env(safe-area-inset-top, 20px) + (56px * 1.75)); }
+    body { padding-top: var(--top-spacer-height); margin:0; }
+    /* fixed spacer visually matches header, darker and larger; won't intercept clicks (pointer-events:none) */
+    #top-spacer { position: fixed; top: 0; left: 0; right: 0; height: var(--top-spacer-height); z-index: 99999; pointer-events: none; background: linear-gradient(180deg, rgba(0,0,0,0.95), rgba(20,20,20,0.96)); box-shadow: 0 6px 18px rgba(0,0,0,0.6); }
+    #root { min-height: 100vh; box-sizing: border-box; /* ensure content visually starts below the top-spacer */ margin-top: var(--top-spacer-height); }
   </style>
 </head>
 <body>
+  <div id="top-spacer" aria-hidden="true"></div>
   <div id="root"></div>
   <!-- React + ReactDOM (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>

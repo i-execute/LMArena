@@ -1,0 +1,5 @@
+error: no LLM API key found (15 doc/paper/image file(s) need semantic extraction). Set GEMINI_API_KEY or GOOGLE_API_KEY (gemini), MOONSHOT_API_KEY (kimi), ANTHROPIC_API_KEY (claude), OPENAI_API_KEY (openai), DEEPSEEK_API_KEY (deepseek), or pass --backend. A code-only corpus needs no key. Or pass --code-only to index just the code (local AST, no key) and skip the non-code files.
+[graphify extract] scanning /home/forget/LMArena
+[graphify extract] found 61 code, 15 docs, 0 papers, 0 images
+[graphify extract] 9 file(s) not classified (no supported extension or shebang), skipped: .env.example, .gitignore, .python-version, LICENSE, graphify-run.log, m6Yg.zip (+3 more)
+[graphify extract] 1 file(s) skipped as potentially sensitive (rename or move if wrongly flagged): .env
