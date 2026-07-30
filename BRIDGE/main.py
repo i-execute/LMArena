@@ -5015,7 +5015,7 @@ if __name__ == "__main__":
         pass
 
     # Resolve a free port: prefer 6767, fall back to next available
-    from BRIDGE.configurator import resolve_port
+    from .configurator import resolve_port
     resolved = resolve_port(constants.PORT)
     global PORT
     PORT = resolved
