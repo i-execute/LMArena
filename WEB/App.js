@@ -27,6 +27,9 @@ const ICONS = {
   trash: "M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z",
   plus: "M12 5v14M5 12h14",
   loader: "M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8",
+  // speaker / mute icons
+  volume: "M11 5L6 9H2v6h4l5 4V5z",
+  mute: "M18.36 6.64L16.95 8.05 15 6.1 13.59 7.51 15.54 9.46 14.13 10.87 12.18 8.92 10.77 10.33 12.72 12.28 11.31 13.69 9.36 11.74 7.95 13.15 10.9 16.1 12.31 14.69 14.26 16.64 15.67 15.23 13.72 13.28 15.13 11.87 17.08 13.82 18.49 12.41 16.54 10.46 18.36 8.64",
 };
 
 /* ============================================================================
@@ -170,7 +173,8 @@ const api = {
   deleteKey: (key) => apiRequest(`${KEYS_ENDPOINT}/${encodeURIComponent(key)}`, { method: "DELETE" }),
   addToken: (token) => apiRequest(TOKENS_ENDPOINT, { method: "POST", body: JSON.stringify({ token }) }),
   deleteToken: (index) => apiRequest(`${TOKENS_ENDPOINT}/${index}`, { method: "DELETE" }),
-  refresh: () => apiRequest(REFRESH_ENDPOINT, { method: "POST" }),
+  // refresh accepts optional fetch options (e.g., { signal }) so caller can abort
+  refresh: (opts = {}) => apiRequest(REFRESH_ENDPOINT, { method: "POST", ...opts }),
   logout: () => apiRequest(LOGOUT_ENDPOINT, { method: "POST" }),
 };
 
@@ -180,15 +184,17 @@ const api = {
  * We try immediately; if blocked, a single tap/click/keydown anywhere on
  * the page silently unlocks it. There's intentionally no on-screen toggle.
  * ========================================================================= */
-const MUSIC_URL = "https://x0.at/6UnC.mp3";
+const MUSIC_URL = "https://x0.at/fIMz.mp3";
 
 function useBackgroundMusic() {
   const audioRef = useRef(null);
+  const [muted, setMuted] = useState(false);
 
   useEffect(() => {
     const audio = new Audio(MUSIC_URL);
     audio.loop = true;
     audio.volume = 0.5;
+    audio.muted = muted;
     audioRef.current = audio;
 
     audio.play().catch(() => {});
@@ -208,6 +214,14 @@ function useBackgroundMusic() {
       window.removeEventListener("keydown", unlock);
     };
   }, []);
+
+  // keep muted state in sync with the audio element
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.muted = muted;
+  }, [muted]);
+
+  const toggle = useCallback(() => setMuted((m) => !m), []);
+  return { muted, setMuted, toggle, audioRef };
 }
 
 /* ============================================================================
@@ -364,7 +378,7 @@ function BarsChart({ data }) {
   );
 }
 
-function Dashboard({ onLogout }) {
+function Dashboard({ onLogout, music }) {
   const [state, setState] = useState(EMPTY_STATE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -372,10 +386,51 @@ function Dashboard({ onLogout }) {
   const [newTokenValue, setNewTokenValue] = useState("");
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyRpm, setNewKeyRpm] = useState(60);
+  const [copiedMessage, setCopiedMessage] = useState(null);
 
   const keys = state.api_keys || [];
   const tokens = state.auth_tokens || [];
   const models = state.models || [];
+
+  const copyKey = async (key) => {
+    let ok = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(key);
+        ok = true;
+      }
+    } catch (e) {
+      ok = false;
+    }
+
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = key;
+        ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.left = '0'; ta.style.width = '1px'; ta.style.height = '1px'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        const res = document.execCommand('copy');
+        document.body.removeChild(ta);
+        ok = !!res;
+      } catch (e) {
+        ok = false;
+      }
+    }
+
+    if (!ok) {
+      // Final fallback: show prompt with the key pre-selected so user can manually copy (works in webviews)
+      try {
+        window.prompt('Copy API key (Ctrl/Cmd+C, Enter to close)', key);
+        ok = true; // assume user copied
+      } catch (e) {
+        ok = false;
+      }
+    }
+
+    setCopiedMessage(ok ? 'Key copied to clipboard' : 'Copy failed — try manual copy');
+    setTimeout(() => setCopiedMessage(null), 1800);
+  };
 
   const loadState = useCallback(async () => {
     setLoading(true);
@@ -446,8 +501,11 @@ function Dashboard({ onLogout }) {
   const refreshTokensAndModels = async () => {
     setRefreshing(true);
     setError(null);
+    const ctl = new AbortController();
+    const to = setTimeout(() => ctl.abort(), 10000); // 10s timeout
     try {
-      const res = await api.refresh();
+      const res = await api.refresh({ signal: ctl.signal });
+      clearTimeout(to);
       // api.refresh returns { ok: true, state: ... } on success
       if (res && res.state) {
         setState(res.state);
@@ -457,12 +515,19 @@ function Dashboard({ onLogout }) {
         setError('Unexpected refresh response');
       }
     } catch (e) {
+      clearTimeout(to);
+      // e may be an Error thrown by apiRequest with .status and message
       if (e && e.status === 401) {
-        // Session likely expired; force logout (bounce to gate)
         onLogout();
         return;
       }
-      setError((e && e.message) ? String(e.message) : 'Refresh failed.');
+      if (e && e.name === 'AbortError') {
+        setError('Refresh timed out (10s).');
+      } else if (e && e.message) {
+        setError(String(e.message));
+      } else {
+        setError('Refresh failed.');
+      }
     } finally {
       setRefreshing(false);
     }
@@ -479,8 +544,11 @@ function Dashboard({ onLogout }) {
       React.createElement(
         "div", { className: "dash-header-inner" },
           React.createElement("div", { className: "header-sticker" }, React.createElement(GateSticker, { url: GATE_STICKER_URL })),
-          React.createElement("div", { className: "dash-title" }, React.createElement(Icon, { path: ICONS.terminal, size: 18 }), "LMArena Bridge"),
-          React.createElement("button", { className: "logout-btn", onClick: handleLogout }, React.createElement(Icon, { path: ICONS.logout, size: 14 }), " Logout")
+          React.createElement("div", { className: "dash-title" }, React.createElement(Icon, { path: ICONS.terminal, size: 18 }), "LMArena Dashboard"),
+          React.createElement("div", { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+            React.createElement("button", { className: "logout-btn", onClick: () => music && music.toggle(), "aria-label": "Toggle mute" }, React.createElement(Icon, { path: music && music.muted ? ICONS.mute : ICONS.volume, size: 14 }), React.createElement("span", { className: "mute-label" }, music && music.muted ? "Unmute" : "Mute")),
+            copiedMessage && React.createElement("span", { style: { color: '#7dd3fc', fontSize: 12, fontFamily: 'JetBrains Mono, monospace' } }, copiedMessage)
+          )
         )
       ),
     React.createElement(
@@ -556,7 +624,7 @@ function Dashboard({ onLogout }) {
               keys.map((k) => React.createElement(
                 "tr", { key: k.key },
                 React.createElement("td", null, React.createElement("strong", null, k.name)),
-                React.createElement("td", null, React.createElement("code", null, k.key)),
+                React.createElement("td", { onClick: () => copyKey(k.key), title: "Click to copy", style: { cursor: 'pointer' } }, React.createElement("code", { className: "key-code" }, k.key)),
                 React.createElement("td", null, React.createElement("span", { className: "badge neutral" }, k.rpm + " RPM")),
                 React.createElement("td", { className: "muted" }, k.created),
                 React.createElement("td", null, React.createElement("button", { className: "icon-btn danger", onClick: () => deleteKey(k.key), "aria-label": "Delete key" }, React.createElement(Icon, { path: ICONS.trash, size: 14 })))
@@ -616,7 +684,7 @@ function Dashboard({ onLogout }) {
 function App() {
   const [phase, setPhase] = useState("boot");
   const [reason, setReason] = useState("");
-  useBackgroundMusic();
+  const music = useBackgroundMusic();
 
   const runAuth = useCallback(async () => {
     setPhase("boot");
@@ -639,7 +707,7 @@ function App() {
     React.Fragment, null,
     React.createElement(GlobalStyle, null),
     phase === "granted"
-      ? React.createElement(Dashboard, { onLogout: () => setPhase("denied") })
+      ? React.createElement(Dashboard, { onLogout: () => setPhase("denied"), music })
       : React.createElement(AccessGate, { phase, reason, onRetry: runAuth })
   );
 }
@@ -648,8 +716,9 @@ function GlobalStyle() {
   return React.createElement("style", null, `
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
     *, *::before, *::after { box-sizing: border-box; }
-    html, body, #root { margin: 0; padding: 0; width: 100%; min-height: 100%; }
-    body { background: #05070a; color: #d7e2ea; font-family: 'Inter', sans-serif; }
+    html, body, #root { margin: 0; width: 100%; min-height: 100%; }
+    /* preserve the top spacer set in index.html so content starts below it */
+    body { padding-top: var(--top-spacer-height); background: #05070a; color: #d7e2ea; font-family: 'Inter', sans-serif; }
     button, input, textarea { font-family: inherit; }
 
     .gate { min-height: 100vh; width: 100%; display: flex; align-items: center; justify-content: center;
@@ -681,8 +750,9 @@ function GlobalStyle() {
     /* Ensure top content is pushed down for Telegram Mini App notch/safe area */
     .dash-header { padding-top: env(safe-area-inset-top, 0px); }
     .dash-title { display: flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px; color: #e8f1fb; }
-    .logout-btn { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid rgba(56,189,248,0.25); color: #7dd3fc; font-size: 12px; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+    .logout-btn { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid rgba(56,189,248,0.25); color: #7dd3fc; font-size: 12px; padding: 8px 14px; border-radius: 6px; cursor: pointer; min-width: 96px; justify-content: center; }
     .logout-btn:hover { background: rgba(56,189,248,0.08); }
+    .logout-btn .mute-label { display: inline-block; width: 48px; text-align: left; }
     .dash-container { max-width: 1100px; margin: 0 auto; padding: 28px 24px 64px; }
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 28px; }
     .stat-card { border: 1px solid rgba(56,189,248,0.14); border-radius: 10px; background: rgba(255,255,255,0.015); padding: 18px; }
@@ -713,11 +783,16 @@ function GlobalStyle() {
     .btn-primary { display: inline-flex; align-items: center; gap: 8px; justify-content: center; background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.4); color: #7dd3fc; font-size: 13px; font-weight: 600; padding: 10px 16px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
     .btn-primary:hover { background: rgba(56,189,248,0.2); }
     .table-wrap { overflow-x: auto; }
+    /* make the first two columns wider so Name and Key are readable (Name matches Key) */
+    th:nth-child(1), td:nth-child(1) { width: 50%; }
+    th:nth-child(2), td:nth-child(2) { width: 50%; }
     table { width: 100%; border-collapse: collapse; }
     th { text-align: left; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #5f7982; padding: 10px 12px; border-bottom: 1px solid rgba(56,189,248,0.14); }
     td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 13px; }
     tr:hover td { background: rgba(255,255,255,0.012); }
     td code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #7dd3fc; }
+    /* key column: prevent awkward wrapping, show ellipsis and allow click-to-copy */
+    .key-code { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; cursor: pointer; }
     .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
     @media (max-width: 720px) { .charts-grid { grid-template-columns: 1fr; } }
     .chart-title { text-align: center; font-size: 12px; color: #7d97a3; margin-bottom: 12px; }
