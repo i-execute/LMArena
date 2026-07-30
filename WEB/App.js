@@ -146,7 +146,19 @@ async function apiRequest(url, options = {}) {
     ...options,
   });
   if (!res.ok) {
-    const err = new Error("api_error_" + res.status);
+    let bodyText = null;
+    try {
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const body = await res.json();
+        bodyText = body.detail || body.reason || JSON.stringify(body);
+      } else {
+        bodyText = await res.text();
+      }
+    } catch (e) {
+      bodyText = null;
+    }
+    const err = new Error(bodyText ? `${bodyText}` : `api_error_${res.status}`);
     err.status = res.status;
     throw err;
   }

@@ -5,12 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LMArena Bridge UI</title>
   <style>
-    /* Respect phone notch / safe-area and add small extra offset so header is visible */
-    body { padding-top: calc(env(safe-area-inset-top, 20px) + 8px); margin:0; }
+    /* Respect phone notch / safe-area and add a visible top spacer so header is never hidden */
+    :root { --top-spacer-height: calc(env(safe-area-inset-top, 20px) + 56px); }
+    body { padding-top: var(--top-spacer-height); margin:0; }
+    #top-spacer { position: fixed; top: 0; left: 0; right: 0; height: var(--top-spacer-height); z-index: 9999; pointer-events: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
     #root { min-height: 100vh; box-sizing: border-box; }
   </style>
 </head>
 <body>
+  <div id="top-spacer" aria-hidden="true"></div>
   <div id="root"></div>
   <!-- React + ReactDOM (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
