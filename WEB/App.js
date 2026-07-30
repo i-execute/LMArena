@@ -290,12 +290,6 @@ function AccessGate({ phase, reason, onRetry }) {
     React.createElement(
       "div", { className: "gate-card" },
       React.createElement("div", { className: "gate-brand" }, React.createElement(Icon, { path: ICONS.shieldCheck, size: 16 }), React.createElement("span", null, "SECURE ACCESS")),
-      React.createElement(GateSticker, null),
-      React.createElement("div", { style: { display: 'flex', gap: 8, marginTop: 8 } },
-        React.createElement(GateSticker, null),
-        React.createElement(GateSticker, null),
-        React.createElement(GateSticker, null)
-      ),
       phase === "boot" && React.createElement(
         "div", { className: "gate-log" },
         bootLines.map((l, i) => React.createElement("div", { className: "log-line", key: i }, l)),
@@ -428,15 +422,16 @@ function Dashboard({ onLogout }) {
     }
   };
   const createKey = async (e) => {
-    e.preventDefault();
-    const name = newKeyName.trim();
-    if (!name) return;
+    if (e && e.preventDefault) e.preventDefault();
     try {
-      await api.createKey(name, Number(newKeyRpm) || 60);
+      // allow empty name -> server will auto-generate
+      const name = (newKeyName || '').trim();
+      const rpm = Number(newKeyRpm) || 60;
+      await api.createKey(name, rpm);
       setNewKeyName(""); setNewKeyRpm(60);
       loadState();
-    } catch {
-      setError("Failed to create key.");
+    } catch (err) {
+      setError((err && err.message) ? String(err.message) : "Failed to create key.");
     }
   };
   const deleteKey = async (key) => {
@@ -450,11 +445,24 @@ function Dashboard({ onLogout }) {
   };
   const refreshTokensAndModels = async () => {
     setRefreshing(true);
+    setError(null);
     try {
-      const { state: fresh } = await api.refresh();
-      setState(fresh);
-    } catch {
-      setError("Refresh failed.");
+      const res = await api.refresh();
+      // api.refresh returns { ok: true, state: ... } on success
+      if (res && res.state) {
+        setState(res.state);
+      } else if (res && res.ok && res.state) {
+        setState(res.state);
+      } else {
+        setError('Unexpected refresh response');
+      }
+    } catch (e) {
+      if (e && e.status === 401) {
+        // Session likely expired; force logout (bounce to gate)
+        onLogout();
+        return;
+      }
+      setError((e && e.message) ? String(e.message) : 'Refresh failed.');
     } finally {
       setRefreshing(false);
     }
@@ -470,10 +478,11 @@ function Dashboard({ onLogout }) {
       "header", { className: "dash-header" },
       React.createElement(
         "div", { className: "dash-header-inner" },
-        React.createElement("div", { className: "dash-title" }, React.createElement(Icon, { path: ICONS.terminal, size: 18 }), "LMArena Bridge"),
-        React.createElement("button", { className: "logout-btn", onClick: handleLogout }, React.createElement(Icon, { path: ICONS.logout, size: 14 }), " Logout")
-      )
-    ),
+          React.createElement("div", { className: "header-sticker" }, React.createElement(GateSticker, { url: GATE_STICKER_URL })),
+          React.createElement("div", { className: "dash-title" }, React.createElement(Icon, { path: ICONS.terminal, size: 18 }), "LMArena Bridge"),
+          React.createElement("button", { className: "logout-btn", onClick: handleLogout }, React.createElement(Icon, { path: ICONS.logout, size: 14 }), " Logout")
+        )
+      ),
     React.createElement(
       "main", { className: "dash-container" },
 
@@ -558,21 +567,14 @@ function Dashboard({ onLogout }) {
         React.createElement(
           "form", { className: "form-row", onSubmit: createKey },
           React.createElement("div", { className: "form-block" },
-            React.createElement("label", { htmlFor: "name" }, "Key name"),
-            React.createElement("input", { id: "name", placeholder: "e.g. Production key", value: newKeyName, onChange: (e) => setNewKeyName(e.target.value), required: true })
+            React.createElement("label", { htmlFor: "name" }, "Key name (leave empty to auto-generate)"),
+            React.createElement("input", { id: "name", placeholder: "e.g. Production key", value: newKeyName, onChange: (e) => setNewKeyName(e.target.value) })
           ),
           React.createElement("div", { className: "form-block" },
             React.createElement("label", { htmlFor: "rpm" }, "Rate limit (RPM)"),
-            React.createElement("input", { id: "rpm", type: "number", min: 1, max: 1000, value: newKeyRpm, onChange: (e) => setNewKeyRpm(e.target.value), required: true })
+            React.createElement("input", { id: "rpm", type: "number", min: 1, max: 1000, value: newKeyRpm, onChange: (e) => setNewKeyRpm(e.target.value) })
           ),
-          React.createElement("button", { type: "submit", className: "btn-primary" }, React.createElement(Icon, { path: ICONS.plus, size: 14 }), " Create key"),
-          React.createElement("button", { type: "button", className: "btn-primary", style: { marginLeft: 8 }, onClick: async () => {
-            try {
-              setError(null);
-              await api.createKey('', 60);
-              loadState();
-            } catch (e) { setError('Auto-generate failed'); }
-          } }, React.createElement(Icon, { path: ICONS.plus, size: 14 }), " Auto-generate key")
+          React.createElement("button", { type: "submit", className: "btn-primary" }, React.createElement(Icon, { path: ICONS.plus, size: 14 }), " Create key")
         )
       ),
 
@@ -658,6 +660,8 @@ function GlobalStyle() {
       font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #38bdf8; margin-bottom: 18px;
       padding-bottom: 14px; border-bottom: 1px dashed rgba(56,189,248,0.16); }
     .gate-sticker { width: 140px; height: 140px; margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; }
+    .header-sticker { margin-right: 12px; }
+    .header-sticker .gate-sticker { width: 44px; height: 44px; margin: 0; }
     .gate-log { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
     .log-line { color: #9fb4bd; padding: 3px 0; display: flex; gap: 8px; }
     .log-line::before { content: '>'; color: #38bdf8; }
