@@ -644,6 +644,55 @@ async def dashboard_redirect():
         pass
     return RedirectResponse(url="/web/")
 
+# Compatibility helper: accept browser cookie dumps (JSON array/object) and combine split arena-auth cookies
+@app.post("/api/merge_tokens")
+async def merge_tokens(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+
+    cookies = None
+    # Allow raw array or { cookies: [...] } or {"arena-auth-prod-v1.0":..., ...}
+    if isinstance(body, list):
+        cookies = body
+    elif isinstance(body, dict):
+        if "cookies" in body and isinstance(body["cookies"], list):
+            cookies = body["cookies"]
+        else:
+            # Try to convert dict map into cookie objects
+            cookies = []
+            for k, v in body.items():
+                # skip non-cookie fields
+                if not isinstance(k, str):
+                    continue
+                cookies.append({"name": k, "value": v})
+    if not cookies:
+        raise HTTPException(status_code=400, detail="Missing cookie array or object")
+
+    # Use the bridge auth helper to combine split cookies
+    try:
+        from .auth import _combine_split_arena_auth_cookies
+        combined = _combine_split_arena_auth_cookies(cookies)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Combine failed: {e}")
+
+    if not combined:
+        raise HTTPException(status_code=400, detail="Could not find arena-auth parts in input")
+
+    # Persist into config.auth_tokens if not present
+    cfg = get_config()
+    auths = cfg.get("auth_tokens") or []
+    if combined not in auths:
+        auths.append(combined)
+        cfg["auth_tokens"] = auths
+        try:
+            save_config(cfg)
+        except Exception:
+            pass
+
+    return {"ok": True, "token": combined}
+
 # Add CORS middleware to handle preflight requests and avoid 405 errors
 app.add_middleware(
     CORSMiddleware,
