@@ -6,6 +6,17 @@ set -e
 # Usage: bash <(curl -fsSL https://raw.githubusercontent.com/i-execute/LMArena/main/install.sh)
 # =============================================================================
 
+SOURCE_URL="https://raw.githubusercontent.com/i-execute/LMArena/main/install.sh"
+
+# Bootstrap: if running from /dev/fd (process substitution) or stdin is not a terminal,
+# copy self to a temp file and re-exec with sudo
+if [ ! -f "$0" ] || [[ "$0" == /dev/fd/* ]] || [[ "$0" == /proc/*/fd/* ]]; then
+    TMPSCRIPT=$(mktemp /tmp/lmarena-install.XXXXXX.sh)
+    curl -fsSL "$SOURCE_URL" -o "$TMPSCRIPT"
+    chmod +x "$TMPSCRIPT"
+    exec sudo bash "$TMPSCRIPT" "$@"
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
