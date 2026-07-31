@@ -262,16 +262,91 @@ app.delete("/api/tokens/:index", requireAuth, (req, res) => {
 });
 
 /* ---------------------------------------------------------------------- */
-/* Refresh — mirrors /refresh-tokens (stub: plug in your real arena fetch) */
+/* Refresh — calls Python bridge's /refresh-tokens endpoint                */
 /* ---------------------------------------------------------------------- */
 
 app.post("/api/refresh", requireAuth, async (req, res) => {
-  // TODO: port get_initial_data() from the Python bridge here — fetch a
-  // fresh cf_clearance + model list from LMArena and persist via writeConfig.
-  const config = readConfig();
-  res.json({ ok: true, state: toDashboardState(config) });
+  try {
+    // Fetch models from Python bridge
+    let models = [];
+    try {
+      const modelsRes = await fetch("http://localhost:8000/api/v1/models", {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (modelsRes.ok) {
+        const modelsData = await modelsRes.json();
+        if (modelsData && modelsData.data) {
+          models = modelsData.data.map((m, i) => ({
+            name: m.id || m.name || `model-${i}`,
+            rank: i + 1,
+            org: m.owned_by || "unknown",
+            capabilities: m.capabilities || [],
+          }));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch models from bridge:", e.message);
+    }
+
+    // Call the Python bridge's refresh endpoint for tokens
+    let authTokens = [];
+    try {
+      const bridgeRes = await fetch("http://localhost:8000/refresh-tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(30000),
+      });
+      
+      if (bridgeRes.ok) {
+        const bridgeData = await bridgeRes.json();
+        if (bridgeData && bridgeData.auth_tokens) {
+          authTokens = bridgeData.auth_tokens;
+        }
+      }
+    } catch (e) {
+      console.error("Bridge refresh failed:", e.message);
+    }
+
+    // Update local config
+    const config = readConfig();
+    if (models.length > 0) config.models = models;
+    if (authTokens.length > 0) config.auth_tokens = authTokens;
+    writeConfig(config);
+
+    res.json({ ok: true, state: toDashboardState(config) });
+  } catch (e) {
+    console.error("Refresh error:", e.message);
+    const config = readConfig();
+    res.json({ ok: true, state: toDashboardState(config) });
+  }
 });
 
-app.listen(Number(PORT), () => {
+app.listen(Number(PORT), async () => {
   console.log(`LMArena Bridge TG backend listening on :${PORT}`);
+  
+  // Auto-fetch models from Python bridge on startup
+  try {
+    const config = readConfig();
+    if (!config.models || config.models.length === 0) {
+      console.log("Fetching models from Python bridge...");
+      const modelsRes = await fetch("http://localhost:8000/api/v1/models", {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (modelsRes.ok) {
+        const modelsData = await modelsRes.json();
+        if (modelsData && modelsData.data) {
+          config.models = modelsData.data.map((m, i) => ({
+            name: m.id || m.name || `model-${i}`,
+            rank: i + 1,
+            org: m.owned_by || "unknown",
+            capabilities: m.capabilities || [],
+          }));
+          writeConfig(config);
+          console.log(`Loaded ${config.models.length} models from bridge`);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to auto-fetch models:", e.message);
+  }
 });

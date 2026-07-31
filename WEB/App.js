@@ -221,7 +221,8 @@ function useBackgroundMusic() {
   }, [muted]);
 
   const toggle = useCallback(() => setMuted((m) => !m), []);
-  return { muted, setMuted, toggle, audioRef };
+  const music = useMemo(() => ({ muted, setMuted, toggle, audioRef }), [muted]);
+  return music;
 }
 
 /* ============================================================================
@@ -712,7 +713,7 @@ function App() {
   );
 }
 
-function GlobalStyle() {
+const GlobalStyle = React.memo(function GlobalStyle() {
   return React.createElement("style", null, `
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
     *, *::before, *::after { box-sizing: border-box; }
@@ -775,10 +776,10 @@ function GlobalStyle() {
     .icon-btn.danger:hover { background: rgba(251,113,133,0.1); color: #fb7185; }
     .form-block { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
     .form-block label { font-size: 12px; color: #8ba3ad; }
-    .form-block input, .form-block textarea { background: rgba(255,255,255,0.02); border: 1px solid rgba(56,189,248,0.18); border-radius: 6px; padding: 10px 12px; color: #e8f1fb; font-size: 13px; }
+    .form-block input, .form-block textarea { background: rgba(255,255,255,0.02); border: 1px solid rgba(56,189,248,0.18); border-radius: 6px; padding: 10px 12px; color: #e8f1fb; font-size: 13px; width: 100%; }
     .form-block textarea { min-height: 72px; resize: vertical; font-family: 'JetBrains Mono', monospace; }
     .form-block input:focus, .form-block textarea:focus { outline: none; border-color: #38bdf8; }
-    .form-row { display: grid; grid-template-columns: 2fr 1fr auto; gap: 12px; align-items: end; margin-top: 18px; }
+    .form-row { display: grid; grid-template-columns: 3fr 1fr auto; gap: 12px; align-items: end; margin-top: 18px; }
     @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
     .btn-primary { display: inline-flex; align-items: center; gap: 8px; justify-content: center; background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.4); color: #7dd3fc; font-size: 13px; font-weight: 600; padding: 10px 16px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
     .btn-primary:hover { background: rgba(56,189,248,0.2); }
@@ -817,7 +818,7 @@ function GlobalStyle() {
     .model-name { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #e8f1fb; }
     @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
   `);
-}
+});
 
 // Ensure global exposure for wrapper HTML that expects a top-level App function
 if (typeof window !== 'undefined' && typeof App === 'function') {

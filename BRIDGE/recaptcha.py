@@ -504,13 +504,18 @@ async def get_recaptcha_v3_token_with_chrome(config: dict) -> Optional[str]:
             ],
         )
         try:
-            # Small stealth tweak: reduces bot-detection surface for reCAPTCHA v3 scoring.
+            # Apply comprehensive anti-detection patches
             try:
-                await context.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
-                )
+                from .anti_detect import inject_stealth_scripts
+                await inject_stealth_scripts(context)
             except Exception:
-                pass
+                # Fallback to minimal patch
+                try:
+                    await context.add_init_script(
+                        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+                    )
+                except Exception:
+                    pass
 
             if cookies:
                 try:

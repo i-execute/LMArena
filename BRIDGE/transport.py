@@ -669,16 +669,27 @@ async def fetch_lmarena_stream_via_chrome(
                 "--disable-blink-features=AutomationControlled",
                 "--no-first-run",
                 "--no-default-browser-check",
+                "--disable-infobars",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-features=TranslateUI",
+                "--disable-ipc-flooding-protection",
             ],
         )
         try:
-            # Small stealth tweak: reduces bot-detection surface for reCAPTCHA v3 scoring.
+            # Apply comprehensive anti-detection patches
             try:
-                await context.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
-                )
+                from .anti_detect import inject_stealth_scripts
+                await inject_stealth_scripts(context)
             except Exception:
-                pass
+                # Fallback to minimal patch
+                try:
+                    await context.add_init_script(
+                        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+                    )
+                except Exception:
+                    pass
 
             if desired_cookies:
                 try:
@@ -1192,13 +1203,18 @@ async def fetch_lmarena_stream_via_camoufox(
 
         async with _m().AsyncCamoufox(headless=headless, main_world_eval=True) as browser:
             context = await browser.new_context(user_agent=user_agent or None)
-            # Small stealth tweak: reduces bot-detection surface for reCAPTCHA v3 scoring.
+            # Apply comprehensive anti-detection patches
             try:
-                await context.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
-                )
+                from .anti_detect import inject_stealth_scripts
+                await inject_stealth_scripts(context)
             except Exception:
-                pass
+                # Fallback to minimal patch
+                try:
+                    await context.add_init_script(
+                        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+                    )
+                except Exception:
+                    pass
             if desired_cookies:
                 try:
                     await context.add_cookies(desired_cookies)
@@ -2062,10 +2078,15 @@ async def camoufox_proxy_worker():
                 else:
                     context = await browser.new_context(user_agent=user_agent or None)
                 
+                # Apply comprehensive anti-detection patches
                 try:
-                    await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+                    from .anti_detect import inject_stealth_scripts
+                    await inject_stealth_scripts(context)
                 except Exception:
-                    pass
+                    try:
+                        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+                    except Exception:
+                        pass
 
                 # Inject only a minimal set of cookies (do not overwrite browser-managed state).
                 cookie_store = cfg.get("browser_cookies")
