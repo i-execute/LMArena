@@ -197,6 +197,7 @@ if [ ! -f "$ENV_FILE" ]; then
     echo ""
     echo -e "${CYAN}=== Configuration ===${NC}"
     echo ""
+    FIRST_INSTALL=1
 
     # Bot token
     while true; do
@@ -250,6 +251,7 @@ INITDATA_MAX_AGE_HOURS=24
 CORS_ORIGINS=*
 PORT=8787
 DATA_FILE=./data/config.json
+GITHUB_TOKEN=$GITHUB_TOKEN
 EOF
     chown "$LMARENA_USER:$LMARENA_USER" "$ENV_FILE"
     chmod 600 "$ENV_FILE"
@@ -286,19 +288,21 @@ EOF
     echo -e "Default API Key: ${YELLOW}$API_KEY${NC}"
     echo ""
 else
+    echo -e "${YELLOW}Configuration exists at $ENV_FILE${NC}"
+    echo -e "${YELLOW}To reconfigure, delete it and re-run this script${NC}"
+    echo ""
     install_units
     sudo -u "$LMARENA_USER" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" systemctl --user enable --now "${SERVICE_PREFIX}-web"
     sudo -u "$LMARENA_USER" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" systemctl --user enable --now "${SERVICE_PREFIX}-bot"
     sudo -u "$LMARENA_USER" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" systemctl --user enable --now "${SERVICE_PREFIX}-tunnel"
     echo -e "${GREEN}Services restarted${NC}"
+    echo ""
+    echo -e "${CYAN}Service Management:${NC}"
+    echo "  status  : sudo -u $LMARENA_USER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR systemctl --user status ${SERVICE_PREFIX}-web"
+    echo "  logs    : sudo -u $LMARENA_USER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR journalctl --user -u ${SERVICE_PREFIX}-web -f"
+    echo "  restart : sudo -u $LMARENA_USER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR systemctl --user restart ${SERVICE_PREFIX}-web"
+    echo "  stop    : sudo -u $LMARENA_USER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR systemctl --user stop ${SERVICE_PREFIX}-{web,bot,tunnel}"
+    echo ""
+    echo -e "Web UI: ${GREEN}http://localhost:8787${NC}"
+    echo "Tunnel URL: check logs with the command above"
 fi
-
-echo ""
-echo -e "${CYAN}Service Management:${NC}"
-echo "  status  : sudo -u $LMARENA_USER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR systemctl --user status ${SERVICE_PREFIX}-web"
-echo "  logs    : sudo -u $LMARENA_USER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR journalctl --user -u ${SERVICE_PREFIX}-web -f"
-echo "  restart : sudo -u $LMARENA_USER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR systemctl --user restart ${SERVICE_PREFIX}-web"
-echo "  stop    : sudo -u $LMARENA_USER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR systemctl --user stop ${SERVICE_PREFIX}-{web,bot,tunnel}"
-echo ""
-echo -e "Web UI: ${GREEN}http://localhost:8787${NC}"
-echo "Tunnel URL: check logs with the command above"
