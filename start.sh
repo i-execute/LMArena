@@ -1,6 +1,6 @@
 #!/bin/bash
 # LMArena Bridge - Production Startup Script
-# Starts web server, bot log forwarder, and cloudflared tunnel
+# Starts: web server, python bridge, bot log forwarder, cloudflared tunnel
 
 set -e
 
@@ -17,12 +17,20 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 BOT_TOKEN="${BOT_TOKEN:-8830513815:AAEYeAinDuLLBzBpi0U4_fxJoVgRZ93EdCw}"
 OWNER_ID="${OWNER_ID:-7610246474}"
 WEB_PORT="${WEB_PORT:-8787}"
+BRIDGE_PORT="${BRIDGE_PORT:-6767}"
 
 echo "=== LMArena Bridge Startup ==="
 echo "Bot Token: ${BOT_TOKEN:0:10}..."
 echo "Owner ID: $OWNER_ID"
 echo "Web Port: $WEB_PORT"
+echo "Bridge Port: $BRIDGE_PORT"
 echo ""
+
+# Create config.json symlink if missing
+if [ ! -f "$SCRIPT_DIR/config.json" ] && [ -f "$WEB_DIR/data/config.json" ]; then
+    ln -sf WEB/data/config.json "$SCRIPT_DIR/config.json"
+    echo "Created config.json symlink"
+fi
 
 # Function to stop all services
 cleanup() {
@@ -45,42 +53,70 @@ trap cleanup EXIT INT TERM
 # Kill any existing processes
 echo "Cleaning up existing processes..."
 pkill -f "node server.js" 2>/dev/null || true
+pkill -f "BRIDGE.main" 2>/dev/null || true
 pkill -f "BOT/main.py" 2>/dev/null || true
 pkill -f "cloudflared tunnel" 2>/dev/null || true
 sleep 2
 
-# Start web server
+# Start web server (Node.js dashboard)
 echo "Starting web server on port $WEB_PORT..."
 cd "$WEB_DIR"
 PORT=$WEB_PORT setsid node server.js > "$LOG_DIR/web_server.log" 2>&1 &
 echo $! > "$PID_DIR/web_server.pid"
 sleep 3
 
-# Check if web server started
 if ss -tlnp | grep -q ":$WEB_PORT"; then
-    echo "✓ Web server started on port $WEB_PORT"
+    echo "Web server started on port $WEB_PORT"
 else
-    echo "✗ Web server failed to start"
+    echo "Web server failed to start"
     cat "$LOG_DIR/web_server.log"
     exit 1
+fi
+
+# Start Python bridge (FastAPI)
+echo "Starting Python bridge on port $BRIDGE_PORT..."
+cd "$SCRIPT_DIR"
+VENV_PYTHON="$SCRIPT_DIR/venv/bin/python3"
+if [ -x "$VENV_PYTHON" ]; then
+    setsid "$VENV_PYTHON" -m BRIDGE.main > "$LOG_DIR/bridge.log" 2>&1 &
+else
+    setsid python3 -m BRIDGE.main > "$LOG_DIR/bridge.log" 2>&1 &
+fi
+echo $! > "$PID_DIR/bridge.pid"
+sleep 3
+
+if ps -p $(cat "$PID_DIR/bridge.pid") > /dev/null 2>&1; then
+    echo "Python bridge started on port $BRIDGE_PORT"
+else
+    echo "Python bridge failed to start"
+    cat "$LOG_DIR/bridge.log"
 fi
 
 # Start bot log forwarder
 echo "Starting bot log forwarder..."
 cd "$SCRIPT_DIR"
-setsid python3 "$BOT_DIR/main.py" \
-    --mode forward \
-    --token "$BOT_TOKEN" \
-    --owner "$OWNER_ID" \
-    --logs "$LOG_DIR/web_server.log" "/tmp/client_errors.log" "/tmp/auth_times.log" \
-    > "$LOG_DIR/bot.log" 2>&1 &
+if [ -x "$VENV_PYTHON" ]; then
+    setsid "$VENV_PYTHON" "$BOT_DIR/main.py" \
+        --mode forward \
+        --token "$BOT_TOKEN" \
+        --owner "$OWNER_ID" \
+        --logs "$LOG_DIR/web_server.log" "/tmp/client_errors.log" "/tmp/auth_times.log" \
+        > "$LOG_DIR/bot.log" 2>&1 &
+else
+    setsid python3 "$BOT_DIR/main.py" \
+        --mode forward \
+        --token "$BOT_TOKEN" \
+        --owner "$OWNER_ID" \
+        --logs "$LOG_DIR/web_server.log" "/tmp/client_errors.log" "/tmp/auth_times.log" \
+        > "$LOG_DIR/bot.log" 2>&1 &
+fi
 echo $! > "$PID_DIR/bot.pid"
 sleep 2
 
 if ps -p $(cat "$PID_DIR/bot.pid") > /dev/null 2>&1; then
-    echo "✓ Bot log forwarder started"
+    echo "Bot log forwarder started"
 else
-    echo "✗ Bot log forwarder failed to start"
+    echo "Bot log forwarder failed to start"
     cat "$LOG_DIR/bot.log"
 fi
 
@@ -93,9 +129,9 @@ sleep 12
 # Extract tunnel URL
 TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" "$LOG_DIR/cloudflared.log" | tail -1)
 if [ -n "$TUNNEL_URL" ]; then
-    echo "✓ Cloudflared tunnel started: $TUNNEL_URL"
+    echo "Cloudflared tunnel started: $TUNNEL_URL"
 else
-    echo "✗ Cloudflared tunnel failed to get URL"
+    echo "Cloudflared tunnel failed to get URL"
     cat "$LOG_DIR/cloudflared.log"
 fi
 
@@ -103,6 +139,7 @@ echo ""
 echo "=== All services started ==="
 echo "Web UI: $TUNNEL_URL"
 echo "Local: http://localhost:$WEB_PORT"
+echo "Bridge API: http://localhost:$BRIDGE_PORT/api/v1"
 echo ""
 echo "Logs: $LOG_DIR/"
 echo "PIDs: $PID_DIR/"

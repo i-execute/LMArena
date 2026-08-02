@@ -817,6 +817,58 @@ const GlobalStyle = React.memo(function GlobalStyle() {
     .model-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .model-name { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #e8f1fb; }
     @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+    /* === Animations === */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideInLeft {
+      from { opacity: 0; transform: translateX(-14px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(251,113,133,0); }
+      50% { box-shadow: 0 0 18px 2px rgba(251,113,133,0.25); }
+    }
+    @keyframes scanLine {
+      0% { top: -2px; }
+      100% { top: 100%; }
+    }
+    @keyframes typewriter {
+      from { width: 0; }
+      to { width: 100%; }
+    }
+    .gate-card { animation: fadeInUp 0.5s ease-out; }
+    .gate-status.denied { animation: pulseGlow 2s ease-in-out infinite; }
+    .gate-sticker { animation: fadeIn 0.6s ease-out; }
+    .log-line { animation: slideInLeft 0.25s ease-out both; }
+    .log-line:nth-child(1) { animation-delay: 0s; }
+    .log-line:nth-child(2) { animation-delay: 0.3s; }
+    .log-line:nth-child(3) { animation-delay: 0.6s; }
+    .log-line:nth-child(4) { animation-delay: 0.9s; }
+    .log-line:nth-child(5) { animation-delay: 1.2s; }
+    .stat-card { animation: fadeInUp 0.4s ease-out both; }
+    .stat-card:nth-child(1) { animation-delay: 0.05s; }
+    .stat-card:nth-child(2) { animation-delay: 0.1s; }
+    .stat-card:nth-child(3) { animation-delay: 0.15s; }
+    .panel { animation: fadeInUp 0.4s ease-out both; }
+    .panel:nth-child(1) { animation-delay: 0.1s; }
+    .panel:nth-child(2) { animation-delay: 0.15s; }
+    .panel:nth-child(3) { animation-delay: 0.2s; }
+    .panel:nth-child(4) { animation-delay: 0.25s; }
+    .panel:nth-child(5) { animation-delay: 0.3s; }
+    .model-card { transition: transform 0.2s ease, border-color 0.2s ease; }
+    .model-card:hover { transform: translateY(-2px); border-color: rgba(56,189,248,0.35); }
+    .btn-primary { transition: background 0.2s ease, transform 0.15s ease; }
+    .btn-primary:active { transform: scale(0.97); }
+    .token-row { animation: fadeIn 0.3s ease-out both; }
+    .badge.good { animation: fadeIn 0.5s ease-out; }
+    .badge.bad { animation: pulseGlow 2s ease-in-out infinite; }
   `);
 });
 

@@ -30,9 +30,9 @@ import requests
 
 # Import from modularized modules
 from . import constants
-from . import config as _config_module
+from . import configurator as _config_module
 from . import state as _state_module
-from .config import get_models, save_models
+from .configurator import get_models, save_models
 from .browser_utils import (
     _is_windows,
     _normalize_camoufox_window_mode,
@@ -4218,7 +4218,6 @@ if __name__ == "__main__":
     # Resolve a free port: prefer 6767, fall back to next available
     from .configurator import resolve_port
     resolved = resolve_port(constants.PORT)
-    global PORT
     PORT = resolved
     if resolved != constants.PORT:
         print(f"⚠️  Port {constants.PORT} is busy, using {resolved} instead")
