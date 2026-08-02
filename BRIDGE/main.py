@@ -1139,6 +1139,10 @@ async def startup_event():
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return
 
+    # Ignore SIGPIPE to prevent Playwright Node.js EPIPE from killing the process
+    import signal
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+
     try:
         # Ensure config and models files exist
         config = get_config()
@@ -1183,7 +1187,14 @@ async def startup_event():
         last_userscript_poll = now
         USERSCRIPT_PROXY_LAST_POLL_AT = now
         
-        asyncio.create_task(camoufox_proxy_worker())
+        async def safe_proxy_worker():
+            try:
+                await camoufox_proxy_worker()
+            except (SystemExit, KeyboardInterrupt):
+                pass
+            except Exception as e:
+                debug_print(f"⚠️ Camoufox proxy worker crashed ({type(e).__name__}): {e}")
+        asyncio.create_task(safe_proxy_worker())
         
     except Exception as e:
         debug_print(f"❌ Error during startup: {e}")
